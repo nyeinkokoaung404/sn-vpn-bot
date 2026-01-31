@@ -6,63 +6,81 @@
 const BOT_TOKEN = '8225959413:AAGmDSHUYYZN2FKd5t_VMH_IsAOHecNcqe0'; 
 const API_URL = 'https://iam404.serv00.net/vpn-database/sn-vpn/api.php'; 
 
+// ခွင့်ပြုထားသော Admin IDs
+const ADMIN_IDS = [7640437122, 1273841502];
+
 export async function handleUpdate(update, env) {
     if (!update.message) return;
 
     const message = update.message;
     const chatId = message.chat.id;
+    const userId = message.from.id;
 
-    // /update command ကို reply ပြန်ထားခြင်း ရှိမရှိ စစ်ဆေး
+    // Admin ဟုတ်မဟုတ် စစ်ဆေးခြင်း
+    if (!ADMIN_IDS.includes(userId)) {
+        return; 
+    }
+
+    // /update command စစ်ဆေးခြင်း
     if (message.text && message.text.startsWith('/update') && message.reply_to_message && message.reply_to_message.document) {
         const doc = message.reply_to_message.document;
 
-        // config.json ဖြစ်မဖြစ် စစ်ဆေး
         if (doc.file_name.endsWith('.json')) {
-            await sendMessage(chatId, "⏳ Config file ကို ဖတ်ပြီး API သို့ ပေးပို့နေပါတယ်...");
+            await sendMessage(chatId, "⏳ <b>Config file ကို ဖတ်ပြီး Server သို့ Update လုပ်နေပါတယ်...</b>");
             
             try {
-                // 1. Telegram ဆီက File Link ယူမယ်
                 const fileLink = await getFileLink(doc.file_id);
                 const fileRes = await fetch(fileLink);
                 const configContent = await fileRes.text();
 
-                // 2. သင့်ရဲ့ PHP API ဆီကို POST နဲ့ လှမ်းပို့မယ်
-                // PHP code ထဲက $_POST['config_data'] နဲ့ ကိုက်ညီအောင် FormData သုံးပါမယ်
                 const formData = new URLSearchParams();
                 formData.append('config_data', configContent);
 
                 const apiRes = await fetch(`${API_URL}?action=update_config`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: formData.toString()
                 });
 
                 const resultJson = await apiRes.json();
 
-                // 3. ရလဒ်ကို Bot ကနေ ပြန်ပြောမယ်
                 if (resultJson.result === "success") {
-                    await sendMessage(chatId, `✅ ${resultJson.message}\n\n👤 Dev: ${resultJson.developer}\n🕒 Time: ${resultJson.timestamp}`);
+                    // HTML tag များဖြင့် ပိုမိုလှပအောင် ပြင်ဆင်ထားသည်
+                    const successMsg = `✅ <b>Update Successful!</b>\n\n` +
+                                     `<b>Message:</b> <code>${resultJson.message}</code>\n` +
+                                     `<b>Developer:</b> ${resultJson.developer}\n` +
+                                     `<b>Timestamp:</b> <i>${resultJson.timestamp}</i>`;
+                    await sendMessage(chatId, successMsg);
                 } else {
-                    await sendMessage(chatId, `⚠️ Failed: ${resultJson.message}`);
+                    await sendMessage(chatId, `⚠️ <b>API Error:</b> <code>${resultJson.message}</code>`);
                 }
 
             } catch (error) {
-                await sendMessage(chatId, `❌ Error: ${error.message}`);
+                await sendMessage(chatId, `❌ <b>System Error:</b> <code>${error.message}</code>`);
             }
         } else {
-            await sendMessage(chatId, "⚠️ JSON file ကိုပဲ update လုပ်လို့ရမှာပါ။");
+            await sendMessage(chatId, "⚠️ <b>Error:</b> ကျေးဇူးပြု၍ JSON format ရှိသော config file ကိုသာ Reply ပြန်ပေးပါ။");
         }
+    }
+    
+    if (message.text === '/start') {
+        await sendMessage(chatId, "<b>Welcome Admin!</b>\n\nconfig.json ဖိုင်ကို Reply ထောက်ပြီး <code>/update</code> ဟု ရိုက်ပို့ကာ Server ကို update လုပ်နိုင်ပါသည်။");
     }
 }
 
+/**
+ * Telegram သို့ HTML Format ဖြင့် စာသားပေးပို့ရန် Function
+ */
 async function sendMessage(chatId, text) {
     const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
     await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: text })
+        body: JSON.stringify({ 
+            chat_id: chatId, 
+            text: text,
+            parse_mode: 'HTML' // Markdown မှ HTML သို့ ပြောင်းလဲထားပါသည်
+        })
     });
 }
 
@@ -72,5 +90,5 @@ async function getFileLink(fileId) {
     if (data.ok) {
         return `https://api.telegram.org/file/bot${BOT_TOKEN}/${data.result.file_path}`;
     }
-    throw new Error("Telegram မှ ဖိုင်ကို ရယူ၍မရပါ။");
+    throw new Error("Telegram Server မှ File ကို ဆွဲယူ၍ မရနိုင်ပါ။");
 }
