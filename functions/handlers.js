@@ -3,8 +3,8 @@
 // Channel: https://t.me/premium_channel_404
 ///////////////////////////////////////////////
 
-const BOT_TOKEN = '8225959413:AAGmDSHUYYZN2FKd5t_VMH_IsAOHecNcqe0'; // Bot Token ထည့်ရန်
-const API_BASE_URL = 'https://iam404.serv00.net/vpn-database/sn-vpn/api.php'; // မိမိ API URL
+const BOT_TOKEN = '8225959413:AAGmDSHUYYZN2FKd5t_VMH_IsAOHecNcqe0'; 
+const API_URL = 'https://iam404.serv00.net/vpn-database/sn-vpn/api.php'; 
 
 export async function handleUpdate(update, env) {
     if (!update.message) return;
@@ -16,36 +16,47 @@ export async function handleUpdate(update, env) {
     if (message.text && message.text.startsWith('/update') && message.reply_to_message && message.reply_to_message.document) {
         const doc = message.reply_to_message.document;
 
-        // config.json ဖြစ်မဖြစ် စစ်ဆေး (Optional)
+        // config.json ဖြစ်မဖြစ် စစ်ဆေး
         if (doc.file_name.endsWith('.json')) {
-            await sendMessage(chatId, "⏳ File ကို ဖတ်နေပါတယ်၊ ခဏစောင့်ပေးပါ...");
+            await sendMessage(chatId, "⏳ Config file ကို ဖတ်ပြီး API သို့ ပေးပို့နေပါတယ်...");
             
             try {
-                // Telegram Server ကနေ File link ကို ယူခြင်း
+                // 1. Telegram ဆီက File Link ယူမယ်
                 const fileLink = await getFileLink(doc.file_id);
-                const response = await fetch(fileLink);
-                const configText = await response.text();
+                const fileRes = await fetch(fileLink);
+                const configContent = await fileRes.text();
 
-                // API သို့ အချက်အလက် ပေးပို့ခြင်း
-                // Note: URL encoding လုပ်ဖို့ လိုအပ်ပါတယ်
-                const updateUrl = `${API_BASE_URL}?action=update_config=${encodeURIComponent(configText)}`;
-                
-                const apiRes = await fetch(updateUrl);
-                const result = await apiRes.text();
+                // 2. သင့်ရဲ့ PHP API ဆီကို POST နဲ့ လှမ်းပို့မယ်
+                // PHP code ထဲက $_POST['config_data'] နဲ့ ကိုက်ညီအောင် FormData သုံးပါမယ်
+                const formData = new URLSearchParams();
+                formData.append('config_data', configContent);
 
-                await sendMessage(chatId, `✅ Update အောင်မြင်ပါသည်။\n\nServer Response: ${result}`);
+                const apiRes = await fetch(`${API_URL}?action=update_config`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: formData.toString()
+                });
+
+                const resultJson = await apiRes.json();
+
+                // 3. ရလဒ်ကို Bot ကနေ ပြန်ပြောမယ်
+                if (resultJson.result === "success") {
+                    await sendMessage(chatId, `✅ ${resultJson.message}\n\n👤 Dev: ${resultJson.developer}\n🕒 Time: ${resultJson.timestamp}`);
+                } else {
+                    await sendMessage(chatId, `⚠️ Failed: ${resultJson.message}`);
+                }
+
             } catch (error) {
                 await sendMessage(chatId, `❌ Error: ${error.message}`);
             }
         } else {
-            await sendMessage(chatId, "⚠️ ကျေးဇူးပြု၍ JSON format ရှိသော config file ကို reply ပြန်ပေးပါ။");
+            await sendMessage(chatId, "⚠️ JSON file ကိုပဲ update လုပ်လို့ရမှာပါ။");
         }
-    } else if (message.text === '/start') {
-        await sendMessage(chatId, "Welcome! config.json file ကို reply ထောက်ပြီး /update လို့ ရိုက်ပို့ပေးပါ။");
     }
 }
 
-// Telegram Bot API functions
 async function sendMessage(chatId, text) {
     const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
     await fetch(url, {
@@ -56,13 +67,10 @@ async function sendMessage(chatId, text) {
 }
 
 async function getFileLink(fileId) {
-    const getFileUrl = `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`;
-    const res = await fetch(getFileUrl);
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`);
     const data = await res.json();
-    
     if (data.ok) {
         return `https://api.telegram.org/file/bot${BOT_TOKEN}/${data.result.file_path}`;
-    } else {
-        throw new Error("File link ရယူ၍ မရနိုင်ပါ။");
     }
+    throw new Error("Telegram မှ ဖိုင်ကို ရယူ၍မရပါ။");
 }
