@@ -6,7 +6,6 @@
 const BOT_TOKEN = '8225959413:AAGmDSHUYYZN2FKd5t_VMH_IsAOHecNcqe0'; 
 const API_URL = 'https://iam404.serv00.net/vpn-database/sn-vpn/api.php'; 
 
-// ခွင့်ပြုထားသော Admin IDs
 const ADMIN_IDS = [7640437122, 1273841502];
 
 export async function handleUpdate(update, env) {
@@ -15,19 +14,36 @@ export async function handleUpdate(update, env) {
     const message = update.message;
     const chatId = message.chat.id;
     const userId = message.from.id;
+    const text = message.text || "";
 
-    // Admin ဟုတ်မဟုတ် စစ်ဆေးခြင်း
-    if (!ADMIN_IDS.includes(userId)) {
-        return; 
+    if (!ADMIN_IDS.includes(userId)) return;
+
+    // --- VIP User Add Command ---
+    if (text.startsWith('/vip')) {
+        const parts = text.split('/vip')[1].split('|').map(p => p.trim());
+        if (parts.length < 5) {
+            await sendMessage(chatId, "⚠️ <b>အသုံးပြုပုံ မှားယွင်းနေပါသည်။</b>\n\n<code>/vip Name | User | Pass | HWID | ExpDate</code>");
+            return;
+        }
+        const [name, user, pass, hwid, exp] = parts;
+        await sendRequest(chatId, { action: 'add', name, user, pass, hwid, exp }, "VIP User အသစ် ထည့်သွင်းနေပါသည်...");
     }
 
-    // /update command စစ်ဆေးခြင်း
-    if (message.text && message.text.startsWith('/update') && message.reply_to_message && message.reply_to_message.document) {
-        const doc = message.reply_to_message.document;
+    // --- VIP User Delete Command ---
+    else if (text.startsWith('/delete')) {
+        const hwid = text.split('/delete')[1]?.trim();
+        if (!hwid) {
+            await sendMessage(chatId, "⚠️ <b>HWID ထည့်ရန် လိုအပ်ပါသည်။</b>\n\n<code>/delete HWID_HERE</code>");
+            return;
+        }
+        await sendRequest(chatId, { action: 'delete', hwid: hwid }, `HWID: <code>${hwid}</code> ကို ဖျက်သိမ်းနေပါသည်...`);
+    }
 
+    // --- Config Update Command (Reply format) ---
+    else if (text.startsWith('/update') && message.reply_to_message && message.reply_to_message.document) {
+        const doc = message.reply_to_message.document;
         if (doc.file_name.endsWith('.json')) {
-            await sendMessage(chatId, "⏳ <b>Config file ကို ဖတ်ပြီး Server သို့ Update လုပ်နေပါတယ်...</b>");
-            
+            await sendMessage(chatId, "⏳ <b>Config file ကို Update လုပ်နေပါတယ်...</b>");
             try {
                 const fileLink = await getFileLink(doc.file_id);
                 const fileRes = await fetch(fileLink);
@@ -43,52 +59,58 @@ export async function handleUpdate(update, env) {
                 });
 
                 const resultJson = await apiRes.json();
-
                 if (resultJson.result === "success") {
-                    // HTML tag များဖြင့် ပိုမိုလှပအောင် ပြင်ဆင်ထားသည်
-                    const successMsg = `✅ <b>Update Successful!</b>\n\n` +
-                                     `<b>Message:</b> <code>${resultJson.message}</code>\n` +
-                                     `<b>Developer:</b> ${resultJson.developer}\n` +
-                                     `<b>Timestamp:</b> <i>${resultJson.timestamp}</i>`;
-                    await sendMessage(chatId, successMsg);
+                    await sendMessage(chatId, `✅ <b>Config Updated!</b>\n\n<b>Dev:</b> ${resultJson.developer}`);
                 } else {
-                    await sendMessage(chatId, `⚠️ <b>API Error:</b> <code>${resultJson.message}</code>`);
+                    await sendMessage(chatId, `⚠️ <b>API Error:</b> ${resultJson.message}`);
                 }
-
             } catch (error) {
-                await sendMessage(chatId, `❌ <b>System Error:</b> <code>${error.message}</code>`);
+                await sendMessage(chatId, `❌ <b>System Error:</b> ${error.message}`);
             }
-        } else {
-            await sendMessage(chatId, "⚠️ <b>Error:</b> ကျေးဇူးပြု၍ JSON format ရှိသော config file ကိုသာ Reply ပြန်ပေးပါ။");
         }
     }
     
-    if (message.text === '/start') {
-        await sendMessage(chatId, "<b>Welcome Admin!</b>\n\nconfig.json ဖိုင်ကို Reply ထောက်ပြီး <code>/update</code> ဟု ရိုက်ပို့ကာ Server ကို update လုပ်နိုင်ပါသည်။");
+    else if (text === '/start') {
+        const help = "<b>SN VPN Manager Bot Menu</b>\n\n" +
+                     "1️⃣ <b>Add VIP:</b>\n<code>/vip Name | User | Pass | HWID | Exp</code>\n\n" +
+                     "2️⃣ <b>Delete VIP:</b>\n<code>/delete HWID</code>\n\n" +
+                     "3️⃣ <b>Update Config:</b>\nReply to json file with <code>/update</code>";
+        await sendMessage(chatId, help);
     }
 }
 
 /**
- * Telegram သို့ HTML Format ဖြင့် စာသားပေးပို့ရန် Function
+ * API သို့ Request ပို့ရန် Common Function
  */
+async function sendRequest(chatId, params, waitMsg) {
+    await sendMessage(chatId, `⏳ <b>${waitMsg}</b>`);
+    try {
+        const queryParams = new URLSearchParams(params);
+        const apiRes = await fetch(`${API_URL}?${queryParams.toString()}`);
+        const resultJson = await apiRes.json();
+
+        if (resultJson.result === "success") {
+            await sendMessage(chatId, `✅ <b>Success:</b> ${resultJson.message}\n\n<b>Time:</b> ${resultJson.timestamp}`);
+        } else {
+            await sendMessage(chatId, `⚠️ <b>Failed:</b> ${resultJson.message}`);
+        }
+    } catch (error) {
+        await sendMessage(chatId, `❌ <b>System Error:</b> ${error.message}`);
+    }
+}
+
 async function sendMessage(chatId, text) {
     const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
     await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            chat_id: chatId, 
-            text: text,
-            parse_mode: 'HTML' // Markdown မှ HTML သို့ ပြောင်းလဲထားပါသည်
-        })
+        body: JSON.stringify({ chat_id: chatId, text: text, parse_mode: 'HTML' })
     });
 }
 
 async function getFileLink(fileId) {
     const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`);
     const data = await res.json();
-    if (data.ok) {
-        return `https://api.telegram.org/file/bot${BOT_TOKEN}/${data.result.file_path}`;
-    }
-    throw new Error("Telegram Server မှ File ကို ဆွဲယူ၍ မရနိုင်ပါ။");
+    if (data.ok) return `https://api.telegram.org/file/bot${BOT_TOKEN}/${data.result.file_path}`;
+    throw new Error("File path error");
 }
