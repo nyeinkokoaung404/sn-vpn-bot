@@ -16,17 +16,34 @@ export async function handleUpdate(update, env) {
     const userId = message.from.id;
     const text = message.text || "";
 
-    if (!ADMIN_IDS.includes(userId)) return;
+    // if (!ADMIN_IDS.includes(userId)) return;
+    // Admin ဟုတ်မဟုတ် အရင်စစ်ဆေးမယ်
+    if (!ADMIN_IDS.includes(userId)) {
+        // Admin မဟုတ်ရင် ဘာမှမလုပ်ဘဲ ပြန်ထွက်မယ် (သို့မဟုတ် message ပို့ချင်ရင် အောက်က line ကို သုံးပါ)
+        await sendMessage(chatId, "❌ သင်သည် Admin မဟုတ်ပါ။ ဤ Command ကို သုံးခွင့်မရှိပါ။");
+        return;
+    }
 
     // --- VIP User Add Command ---
     if (text.startsWith('/vip')) {
         const parts = text.split('/vip')[1].split('|').map(p => p.trim());
         if (parts.length < 5) {
-            await sendMessage(chatId, "⚠️ <b>အသုံးပြုပုံ မှားယွင်းနေပါသည်။</b>\n\n<code>/vip Name | User | Pass | HWID | ExpDate</code>");
+            await sendMessage(chatId, "⚠️ <b>အသုံးပြုပုံ မှားယွင်းနေပါသည်။</b>\n\n<code>/vip Name | User | Pass | HWID | 30</code> (သို့မဟုတ်) <code>2026-12-31</code>");
             return;
         }
-        const [name, user, pass, hwid, exp] = parts;
-        await sendRequest(chatId, { action: 'add', name, user, pass, hwid, exp }, "VIP User အသစ် ထည့်သွင်းနေပါသည်...");
+
+        let [name, user, pass, hwid, expInput] = parts;
+        let finalExpDate = expInput;
+
+        // ရက်ပေါင်း (ဥပမာ 30) လို့ ရိုက်ထားလျှင် Date ပြောင်းလဲခြင်း
+        if (!isNaN(expInput)) {
+            const days = parseInt(expInput);
+            const date = new Date();
+            date.setDate(date.getDate() + days);
+            finalExpDate = date.toISOString().split('T')[0]; // YYYY-MM-DD format
+        }
+
+        await sendRequest(chatId, { action: 'add', name, user, pass, hwid, exp: finalExpDate }, `VIP User (${finalExpDate}) ထည့်သွင်းနေပါသည်...`);
     }
 
     // --- VIP User Delete Command ---
@@ -72,16 +89,13 @@ export async function handleUpdate(update, env) {
     
     else if (text === '/start') {
         const help = "<b>SN VPN Manager Bot Menu</b>\n\n" +
-                     "1️⃣ <b>Add VIP:</b>\n<code>/vip Name | User | Pass | HWID | Exp</code>\n\n" +
+                     "1️⃣ <b>Add VIP:</b>\n<code>/vip Name | User | Pass | HWID | 30</code>\n(30 သည် ရက်ပေါင်းကို ဆိုလိုသည်)\n\n" +
                      "2️⃣ <b>Delete VIP:</b>\n<code>/delete HWID</code>\n\n" +
                      "3️⃣ <b>Update Config:</b>\nReply to json file with <code>/update</code>";
         await sendMessage(chatId, help);
     }
 }
 
-/**
- * API သို့ Request ပို့ရန် Common Function
- */
 async function sendRequest(chatId, params, waitMsg) {
     await sendMessage(chatId, `⏳ <b>${waitMsg}</b>`);
     try {
@@ -90,7 +104,7 @@ async function sendRequest(chatId, params, waitMsg) {
         const resultJson = await apiRes.json();
 
         if (resultJson.result === "success") {
-            await sendMessage(chatId, `✅ <b>Success:</b> ${resultJson.message}\n\n<b>Time:</b> ${resultJson.timestamp}`);
+            await sendMessage(chatId, `✅ <b>Success:</b> ${resultJson.message}\n\n<b>Exp Date:</b> <code>${params.exp || 'N/A'}</code>`);
         } else {
             await sendMessage(chatId, `⚠️ <b>Failed:</b> ${resultJson.message}`);
         }
